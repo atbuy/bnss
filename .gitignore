@@ -4,3 +4,6 @@
 # Python
 *.py[cod]
 **/__pycache__
+
+# Environment configuration
+.env*

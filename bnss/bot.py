@@ -9,11 +9,12 @@ class BNSSBot(commands.Bot):
     def __init__(self, *args, **kwargs):
         self.settings = get_settings()
         self._prefix = self.settings.prefix
+        self._intents = discord.Intents.all()
         self._activity = Activity(
             type=ActivityType.listening,
             name=f"{self._prefix}help",
         )
-        self._intents = discord.Intents.all()
+
         super().__init__(
             *args,
             command_prefix=self._prefix,

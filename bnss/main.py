@@ -64,6 +64,8 @@ async def sync(
 async def main(bot: BNSSBot):
     """Initialize the bot."""
 
+    discord.opus.load_opus("libopus.so.0")
+
     # Setup logger for bot and discord
     setup_logger(bot.settings.log_level)
 

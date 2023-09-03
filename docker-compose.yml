@@ -1,0 +1,9 @@
+version: "3.9"
+services:
+    bot:
+        build:
+            context: .
+        env_file:
+            - .env
+        container_name: bnss
+        restart: always

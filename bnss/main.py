@@ -72,7 +72,7 @@ async def main(bot: BNSSBot):
     await bot.add_cog(VoiceCog(bot))
 
     # Run bot
-    await bot.start(bot.settings.bnss_token)
+    await bot.start(bot.settings.token)
 
 
 if __name__ == "__main__":

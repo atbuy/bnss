@@ -29,6 +29,8 @@ RUN apk add --no-cache gcc musl-dev libffi-dev curl && \
 # Run app in runtime stage
 FROM python as runtime
 
+RUN apk add --no-cache ffmpeg
+
 # Add poetry virtual environment to PATH
 ENV PATH="/app/.venv/bin:${PATH}"
 

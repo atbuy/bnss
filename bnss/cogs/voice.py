@@ -55,6 +55,36 @@ class VoiceCog(commands.Cog):
 
         return True
 
+    @commands.command(name="playing", description="Show the currently playing song.")
+    async def now_playing(self, ctx: Interaction):
+        """Show the currently playing song."""
+
+        # If the bot is not in a voice channel exit
+        voice: VoiceClient = ctx.guild.voice_client
+        if not voice:
+            return await ctx.send("I am not in a voice channel.")
+
+        # If the bot is not playing a song exit
+        if not voice.is_playing():
+            return await ctx.send("I am not playing a song.")
+
+        if len(self.song_queue) == 0:
+            return await ctx.send("No song currently queued.")
+
+        # Get the song that is currently playing
+        song: Song = self.song_queue[0]
+
+        # Create the embed
+        embed = discord.Embed(
+            title="Now Playing",
+            description=f"**{song.name}**\n{song.link}",
+            color=discord.Color.blurple(),
+        )
+        embed.set_thumbnail(url=song.thumbnail)
+        embed.set_footer(text=f"Requested by {song.requester}")
+
+        return await ctx.send(embed=embed)
+
     @commands.command(name="join", description="Join a voice channel.")
     async def join(self, ctx: Interaction, channel: Optional[VoiceChannel] = None):
         """Join a voice channel."""
@@ -164,7 +194,7 @@ class VoiceCog(commands.Cog):
                     return
 
                 song = Song._from_info(info)
-                song.requester = ctx.author.mention
+                song.requester = ctx.author.name
 
                 self.song_queue.append(song)
 
@@ -218,7 +248,7 @@ class VoiceCog(commands.Cog):
             info = ytdlp.extract_info(query, download=False)
 
             song = Song._from_info(info)
-            song.requester = ctx.author.mention
+            song.requester = ctx.author.name
 
             self.song_queue.append(song)
 

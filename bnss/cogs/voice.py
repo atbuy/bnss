@@ -213,6 +213,9 @@ class VoiceCog(commands.Cog):
     async def play(self, ctx: commands.Context, *, query: str):
         """Play a song using the spotify API library."""
 
+        if len(self.song_queue) >= 10:
+            return await ctx.send("The queue is full.")
+
         # If the user is not in a voice channel exit
         if not ctx.author.voice:
             return await ctx.send("You are not in a voice channel.")

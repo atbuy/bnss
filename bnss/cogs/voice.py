@@ -27,7 +27,7 @@ class VoiceCog(commands.Cog):
         - skip ✔️
         - queue
         - volume ✔️
-        - now_playing
+        - playing ✔️
     """
 
     def __init__(self, bot: BNSSBot):

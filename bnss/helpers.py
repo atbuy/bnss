@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from io import BytesIO
 from typing import Optional
 
 
@@ -9,6 +10,7 @@ class Song:
     duration: Optional[int] = 0
     thumbnail: Optional[str] = ""
     requester: Optional[str] = ""
+    data: Optional[BytesIO] = None
 
     @staticmethod
     def _from_info(info: dict) -> "Song":

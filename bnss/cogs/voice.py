@@ -1,3 +1,4 @@
+import logging
 import subprocess
 from contextlib import redirect_stdout
 from io import BytesIO
@@ -5,11 +6,12 @@ from typing import Optional
 
 import discord
 from discord import Interaction, VoiceChannel, VoiceClient
-from discord import app_commands as slash
 from discord.ext import commands
 from yt_dlp import YoutubeDL
 
 from bnss.bot import BNSSBot
+from bnss.helpers import Song
+from bnss.logger import log
 
 
 class VoiceCog(commands.Cog):
@@ -22,7 +24,7 @@ class VoiceCog(commands.Cog):
         - pause ✔️
         - resume ✔️
         - stop ✔️
-        - skip
+        - skip ✔️
         - queue
         - volume ✔️
         - now_playing
@@ -53,16 +55,14 @@ class VoiceCog(commands.Cog):
 
         return True
 
-    @slash.command(name="join", description="Join a voice channel.")
+    @commands.command(name="join", description="Join a voice channel.")
     async def join(self, ctx: Interaction, channel: Optional[VoiceChannel] = None):
         """Join a voice channel."""
-
-        reply = ctx.response.send_message
 
         # If no channel is specified,
         # join the user's channel
         if not ctx.user.voice:
-            return await reply("You are not in a voice channel.", ephemeral=True)
+            return await ctx.send("You are not in a voice channel.")
 
         if not channel:
             channel = ctx.user.voice.channel
@@ -73,76 +73,141 @@ class VoiceCog(commands.Cog):
         if voice:
             await voice.move_to(channel)
 
-            return await reply(f"Moved to {channel.mention}.")
+            return await ctx.send(f"Moved to {channel.mention}.")
 
         # Connect to the voice channel
         await channel.connect()
-        return await reply(f"Joined {channel.mention}.")
+        return await ctx.send(f"Joined {channel.mention}.")
 
-    @slash.command(name="leave", description="Leave a voice channel.")
+    @commands.command(name="leave", description="Leave a voice channel.")
     async def leave(self, ctx: Interaction):
         """Leave a voice channel."""
-
-        reply = ctx.response.send_message
 
         # If the bot is not in a voice channel,
         # return
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await reply("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.", ephemeral=True)
 
         # Disconnect from the voice channel
         await voice.disconnect()
-        return await reply("Left the voice channel.")
+        return await ctx.send("Left the voice channel.")
 
-    @slash.command(name="volume", description="Change the volume of the player.")
+    @commands.command(name="volume", description="Change the volume of the player.")
     async def volume(self, ctx: Interaction, volume: int):
         """Change the volume of the player."""
 
-        reply = ctx.response.send_message
-
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await reply("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.", ephemeral=True)
 
         # Change the volume of the player
         voice.source.volume = volume / 100
-        return await reply(f"Changed the volume to {volume}.", ephemeral=True)
+        return await ctx.send(f"Changed the volume to {volume}.", ephemeral=True)
 
-    @slash.command(name="play", description="Play a song.")
-    async def play(self, ctx: Interaction, *, query: str):
-        """Play a song using the spotify API library."""
-
-        reply = ctx.response.send_message
+    @commands.command(name="skip", description="Skip the current song.")
+    async def skip(self, ctx: commands.Context):
+        """Skip the current song and play net in queue."""
 
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await reply("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.")
 
         # If the user is not in a voice channel exit
-        if not ctx.user.voice:
-            return await reply("You are not in a voice channel.", ephemeral=True)
+        if not ctx.author.voice:
+            return await ctx.send("You are not in a voice channel.")
 
         # If the user is not in the same voice channel as the bot exit
-        if ctx.user.voice.channel != voice.channel:
-            return await reply(
-                "You are not in the same voice channel as me.", ephemeral=True
-            )
+        if ctx.author.voice.channel != voice.channel:
+            return await ctx.send("You are not in the same voice channel as me.")
+
+        # Check if there is a song currently playing
+        if not voice.is_playing():
+            return await ctx.send("There is no song currently playing.")
+
+        # Skip the current song
+        voice.stop()
+
+        # Play the next song in the queue
+        self.play_next_song(ctx)
+
+    def play_next_song(self, ctx: commands.Context):
+        """Play the next song in the queue."""
+
+        def inner(error):
+            if error:
+                return
+
+            voice = ctx.guild.voice_client
+            if not voice:
+                return
+
+            if len(self.song_queue) <= 1:
+                return
+
+            # Remove current playing song
+            self.song_queue.pop(0)
+            query = self.song_queue.pop(0)
+
+            # https://github.com/yt-dlp/yt-dlp/issues/3298#issuecomment-1181754989
+            # Should be a valid way to download the song into BytesIO
+            # and then convert into a discord.FFmpegPCMAudio object
+            buffer = BytesIO()
+            with redirect_stdout(buffer), YoutubeDL(self.ytdl_opts) as ytdlp:
+                info = ytdlp.extract_info(query, download=False)
+
+                # Check if the song is OK to be downloaded and played
+                if not self.is_valid_song(info):
+                    log(f"Can't play song {query}", level=logging.ERROR)
+                    return
+
+                song = Song._from_info(info)
+                song.requester = ctx.author.mention
+
+                self.song_queue.append(song)
+
+                # Download the song into the buffer
+                ytdlp.download([query])
+
+            buffer.seek(0)
+
+            audio = discord.FFmpegPCMAudio(buffer, pipe=True, stderr=subprocess.PIPE)
+            source = discord.PCMVolumeTransformer(audio)
+            voice.play(source, after=self.play_next_song(ctx))
+
+        return inner
+
+    @commands.command(name="play", description="Play a song.")
+    async def play(self, ctx: commands.Context, *, query: str):
+        """Play a song using the spotify API library."""
+
+        # If the user is not in a voice channel exit
+        if not ctx.author.voice:
+            return await ctx.send("You are not in a voice channel.")
+
+        # Join the channel the user is in
+        voice = ctx.guild.voice_client
+        if not voice:
+            await ctx.author.voice.channel.connect()
+            voice = ctx.guild.voice_client
+
+        # If the user is not in the same voice channel as the bot exit
+        if ctx.author.voice.channel != voice.channel:
+            return await ctx.send("You are not in the same voice channel as me.")
 
         # Check if there is a song currently playing
         if voice.is_playing():
             # Add the song to the queue
-            # TODO Load songs from a queue
             self.song_queue.append(query)
-            return await reply("Already playing another song.")
+            return await ctx.send("Added song to queue.")
 
         # Only allow youtube links since the bot only uses yt-dlp
         if not query.startswith("https://www.youtube.com/watch?v="):
             # Check the length of the video and the filesize
 
-            await reply("You need to provide a valid Youtube link.", ephemeral=True)
+            await ctx.send("You need to provide a valid Youtube link.")
             return
 
         # https://github.com/yt-dlp/yt-dlp/issues/3298#issuecomment-1181754989
@@ -152,11 +217,16 @@ class VoiceCog(commands.Cog):
         with redirect_stdout(buffer), YoutubeDL(self.ytdl_opts) as ytdlp:
             info = ytdlp.extract_info(query, download=False)
 
+            song = Song._from_info(info)
+            song.requester = ctx.author.mention
+
+            self.song_queue.append(song)
+
             # Check if the song is OK to be downloaded and played
             if not self.is_valid_song(info):
-                return await reply("Song is too long or too large.", ephemeral=True)
+                return await ctx.send("Song is too long or too large.")
 
-            await reply("Downloading and playing song.", ephemeral=True)
+            await ctx.send("Downloading and playing song")
 
             # Download the song into the buffer
             ytdlp.download([query])
@@ -165,49 +235,43 @@ class VoiceCog(commands.Cog):
 
         audio = discord.FFmpegPCMAudio(buffer, pipe=True, stderr=subprocess.PIPE)
         source = discord.PCMVolumeTransformer(audio)
-        voice.play(source)
+        voice.play(source, after=self.play_next_song(ctx))
 
-    @slash.command(name="pause", description="Pause the player.")
+    @commands.command(name="pause", description="Pause the player.")
     async def pause(self, ctx: Interaction):
         """Pause the player."""
 
-        reply = ctx.response.send_message
-
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await reply("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.", ephemeral=True)
 
         # Pause the player
         voice.pause()
-        return await reply("Paused the player.")
+        return await ctx.send("Paused the player.")
 
-    @slash.command(name="resume", description="Resume the player.")
+    @commands.command(name="resume", description="Resume the player.")
     async def resume(self, ctx: Interaction):
         """Resume the player."""
 
-        reply = ctx.response.send_message
-
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await reply("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.", ephemeral=True)
 
         # Resume the player
         voice.resume()
-        return await reply("Resumed the player.")
+        return await ctx.send("Resumed the player.")
 
-    @slash.command(name="stop", description="Stop the player.")
+    @commands.command(name="stop", description="Stop the player.")
     async def stop(self, ctx: Interaction):
         """Stop the player."""
-
-        reply = ctx.response.send_message
 
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await reply("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.", ephemeral=True)
 
         # Stop the player
         voice.stop()
-        return await reply("Stopped the player.")
+        return await ctx.send("Stopped the player.")

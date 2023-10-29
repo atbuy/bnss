@@ -68,8 +68,6 @@ class VoiceCog(commands.Cog):
             song = Song._from_info(info)
             song.requester = ctx.author.name
 
-            self.song_queue.append(song)
-
             # Check if the song is OK to download and play
             if not self.is_valid_song(info):
                 log("Not a valid song.", level=logging.ERROR)
@@ -86,6 +84,7 @@ class VoiceCog(commands.Cog):
 
         buffer.seek(0)
         song.data = buffer
+        self.song_queue.append(song)
 
         if voice.is_playing():
             log("Song added to queue.", level=logging.INFO)

@@ -35,6 +35,7 @@ class VoiceCog(commands.Cog):
         self.bot = bot
         self.song_queue: List[Song] = []
         self.__loop = False
+        self.__volume = 100
 
         self.ytdl_opts = {
             "format": "bestaudio/best",
@@ -95,6 +96,7 @@ class VoiceCog(commands.Cog):
 
         audio = discord.FFmpegPCMAudio(buffer, pipe=True, stderr=subprocess.PIPE)
         source = discord.PCMVolumeTransformer(audio)
+        source.volume = self.__volume / 100
         voice.play(source, after=self.play_next_song(ctx))
 
         self._result = "Playing song."
@@ -213,7 +215,8 @@ class VoiceCog(commands.Cog):
             return await ctx.send("I am not in a voice channel.", ephemeral=True)
 
         # Change the volume of the player
-        voice.source.volume = volume / 100
+        self.__volume = volume
+        voice.source.volume = self.__volume / 100
         return await ctx.send(f"Changed the volume to {volume}.", ephemeral=True)
 
     @commands.command(name="skip", description="Skip the current song.")
@@ -274,6 +277,7 @@ class VoiceCog(commands.Cog):
 
             audio = discord.FFmpegPCMAudio(song.data, pipe=True, stderr=subprocess.PIPE)
             source = discord.PCMVolumeTransformer(audio)
+            source.volume = self.__volume / 100
             voice.play(source, after=self.play_next_song(ctx))
 
         return inner

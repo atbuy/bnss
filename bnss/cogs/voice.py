@@ -1,3 +1,4 @@
+import logging
 import subprocess
 from contextlib import redirect_stdout
 from io import BytesIO
@@ -10,6 +11,7 @@ from yt_dlp import YoutubeDL
 
 from bnss.bot import BNSSBot
 from bnss.helpers import Song
+from bnss.logger import log
 
 
 class VoiceCog(commands.Cog):
@@ -52,6 +54,49 @@ class VoiceCog(commands.Cog):
             return False
 
         return True
+
+    def queue_song(self, ctx: commands.Context, voice: VoiceClient, query: str):
+        """Download a song and queue it."""
+
+        # https://github.com/yt-dlp/yt-dlp/issues/3298#issuecomment-1181754989
+        # Should be a valid way to download the song into BytesIO
+        # and then convert into a discord.FFmpegPCMAudio object
+        buffer = BytesIO()
+        with redirect_stdout(buffer), YoutubeDL(self.ytdl_opts) as ytdlp:
+            info = ytdlp.extract_info(query, download=False)
+
+            song = Song._from_info(info)
+            song.requester = ctx.author.name
+
+            self.song_queue.append(song)
+
+            # Check if the song is OK to download and play
+            if not self.is_valid_song(info):
+                log("Not a valid song.", level=logging.ERROR)
+                self._result = "The song is too large or too long to download."
+                return
+
+            # Download the song into the buffer
+            try:
+                ytdlp.download([query])
+            except Exception as e:
+                log(str(e), level=logging.ERROR)
+                self._result = "Can't download song. Please try another URL."
+                return
+
+        buffer.seek(0)
+        song.data = buffer
+
+        if voice.is_playing():
+            log("Song added to queue.", level=logging.INFO)
+            self._result = "Song added to queue."
+            return
+
+        audio = discord.FFmpegPCMAudio(buffer, pipe=True, stderr=subprocess.PIPE)
+        source = discord.PCMVolumeTransformer(audio)
+        voice.play(source, after=self.play_next_song(ctx))
+
+        self._result = "Playing song."
 
     @commands.command(name="queue", description="Show the current queue.")
     async def queue(self, ctx: Interaction):
@@ -201,6 +246,9 @@ class VoiceCog(commands.Cog):
 
             # Remove current playing song
             self.song_queue.pop(0)
+            if len(self.song_queue) == 0:
+                return
+
             song = self.song_queue[0]
 
             audio = discord.FFmpegPCMAudio(song.data, pipe=True, stderr=subprocess.PIPE)
@@ -237,36 +285,11 @@ class VoiceCog(commands.Cog):
             await ctx.send("You need to provide a valid Youtube link.")
             return
 
-        # https://github.com/yt-dlp/yt-dlp/issues/3298#issuecomment-1181754989
-        # Should be a valid way to download the song into BytesIO
-        # and then convert into a discord.FFmpegPCMAudio object
-        buffer = BytesIO()
-        with redirect_stdout(buffer), YoutubeDL(self.ytdl_opts) as ytdlp:
-            info = ytdlp.extract_info(query, download=False)
-
-            song = Song._from_info(info)
-            song.requester = ctx.author.name
-
-            self.song_queue.append(song)
-
-            # Check if the song is OK to be downloaded and played
-            if not self.is_valid_song(info):
-                return await ctx.send("Song is too long or too large.")
-
-            await ctx.send("Downloading and playing song")
-
-            # Download the song into the buffer
-            ytdlp.download([query])
-
-        buffer.seek(0)
-        song.data = buffer
-
-        if voice.is_playing():
-            return await ctx.send("Added song to queue.")
-
-        audio = discord.FFmpegPCMAudio(buffer, pipe=True, stderr=subprocess.PIPE)
-        source = discord.PCMVolumeTransformer(audio)
-        voice.play(source, after=self.play_next_song(ctx))
+        await ctx.send("Downloading...")
+        async with ctx.typing():
+            loop = self.bot.loop
+            await loop.run_in_executor(None, self.queue_song, ctx, voice, query)
+            await ctx.send(self._result)
 
     @commands.command(name="pause", description="Pause the player.")
     async def pause(self, ctx: commands.Context):

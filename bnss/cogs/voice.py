@@ -5,7 +5,7 @@ from io import BytesIO
 from typing import List, Optional
 
 import discord
-from discord import Interaction, VoiceChannel, VoiceClient
+from discord import VoiceChannel, VoiceClient
 from discord.ext import commands
 from yt_dlp import YoutubeDL
 
@@ -25,7 +25,8 @@ class VoiceCog(commands.Cog):
         - resume ✔️
         - stop ✔️
         - skip ✔️
-        - queue
+        - loop ✔️
+        - queue ✔️
         - volume ✔️
         - playing ✔️
     """
@@ -33,6 +34,7 @@ class VoiceCog(commands.Cog):
     def __init__(self, bot: BNSSBot):
         self.bot = bot
         self.song_queue: List[Song] = []
+        self.__loop = False
 
         self.ytdl_opts = {
             "format": "bestaudio/best",
@@ -97,8 +99,17 @@ class VoiceCog(commands.Cog):
 
         self._result = "Playing song."
 
-    @commands.command(name="queue", description="Show the current queue.")
-    async def queue(self, ctx: Interaction):
+    @commands.command(name="loop", description="Loop current song.")
+    async def loop(self, ctx: commands.Context):
+        """Loop current playing son indefinitely."""
+
+        self.__loop = not self.__loop
+
+        action = "L" if self.__loop else "Stopped l"
+        await ctx.send(f"{action}ooping song.")
+
+    @commands.command(name="queue", description="Show the song queue.")
+    async def queue(self, ctx: commands.Context):
         """Show the current queue."""
 
         # If the bot is not in a voice channel exit
@@ -125,7 +136,7 @@ class VoiceCog(commands.Cog):
         return await ctx.send(embed=embed)
 
     @commands.command(name="playing", description="Show the currently playing song.")
-    async def now_playing(self, ctx: Interaction):
+    async def now_playing(self, ctx: commands.Context):
         """Show the currently playing song."""
 
         # If the bot is not in a voice channel exit
@@ -243,12 +254,23 @@ class VoiceCog(commands.Cog):
             if not voice:
                 return
 
-            # Remove current playing song
-            self.song_queue.pop(0)
-            if len(self.song_queue) == 0:
-                return
+            # If loop is set to True,
+            # then we need to just replay the current song.
+            if self.__loop:
+                song = self.song_queue[0]
+                song.data.seek(0)
+            else:
+                # Remove current playing song
+                # and play the next one in the queue
+                if len(self.song_queue) == 0:
+                    return
 
-            song = self.song_queue[0]
+                self.song_queue.pop(0)
+
+                if len(self.song_queue) == 0:
+                    return
+
+                song = self.song_queue[0]
 
             audio = discord.FFmpegPCMAudio(song.data, pipe=True, stderr=subprocess.PIPE)
             source = discord.PCMVolumeTransformer(audio)
@@ -325,6 +347,10 @@ class VoiceCog(commands.Cog):
         if not voice:
             return await ctx.send("I am not in a voice channel.", ephemeral=True)
 
-        # Stop the player
+        # Stop the player, clear the queue
+        # and reset the loop flag
         voice.stop()
-        return await ctx.send("Stopped the player.")
+        self.song_queue.clear()
+        self.__loop = False
+
+        await ctx.send("Stopped the player and cleared queue.")

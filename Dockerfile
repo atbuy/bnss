@@ -1,4 +1,4 @@
-FROM python:3.10-alpine3.17 as python
+FROM python:3.10-alpine3.18 as python
 
 # Python cofiguration
 ENV PYTHONBUFFERED=true

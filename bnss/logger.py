@@ -1,8 +1,9 @@
 import logging
 import sys
+from typing import Any
 
 
-def log(message: str, level: int | None = None) -> None:
+def log(*message: Any, level: int | None = None) -> None:
     """Format message and log"""
 
     logger = logging.getLogger("BNSS")
@@ -12,8 +13,8 @@ def log(message: str, level: int | None = None) -> None:
         level = logger.level
 
     # Log message and save previous log
+    message = " ".join(str(item) for item in message)
     logger.log(level, message)
-    message = message
 
 
 def setup_logger(level: int | None = logging.INFO) -> None:

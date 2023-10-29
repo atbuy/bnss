@@ -6,7 +6,7 @@ from typing import List, Optional
 
 import discord
 from discord import VoiceChannel, VoiceClient
-from discord.ext import commands
+from discord.ext import commands, tasks
 from yt_dlp import YoutubeDL
 
 from bnss.bot import BNSSBot
@@ -44,6 +44,26 @@ class VoiceCog(commands.Cog):
             "quiet": True,
             "no_warnings": True,
         }
+
+        self.disconnect_task.start()
+
+    @tasks.loop(minutes=2)
+    async def disconnect_task(self):
+        """Check if the bot should be disconnected."""
+
+        voices = self.bot.voice_clients
+        if not voices:
+            return
+
+        for voice in voices:
+            if not voice.is_playing():
+                await voice.disconnect()
+
+    @disconnect_task.before_loop
+    async def before_disconnect_task(self):
+        """Wait for the bot to be ready."""
+
+        await self.bot.wait_until_ready()
 
     def is_valid_song(self, info: dict) -> bool:
         """Check if the filesize and duration of a song is OK,"""

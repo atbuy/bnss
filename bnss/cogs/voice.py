@@ -1,8 +1,10 @@
 import logging
+import queue
 import subprocess
+from collections import defaultdict, namedtuple
 from contextlib import redirect_stdout
 from io import BytesIO
-from typing import List, Optional
+from typing import Optional
 
 import discord
 from discord import VoiceChannel, VoiceClient
@@ -10,7 +12,7 @@ from discord.ext import commands, tasks
 from yt_dlp import YoutubeDL
 
 from bnss.bot import BNSSBot
-from bnss.helpers import Song
+from bnss.helpers import Song, VoiceSettings
 from bnss.logger import log
 
 
@@ -33,9 +35,12 @@ class VoiceCog(commands.Cog):
 
     def __init__(self, bot: BNSSBot):
         self.bot = bot
-        self.song_queue: List[Song] = []
-        self.__loop = False
-        self.__volume = 100
+        self.default_settings = VoiceSettings()
+        self.guild_voice = defaultdict(lambda: VoiceSettings)
+        self.__lock = False
+        self.__next_download = queue.Queue()
+
+        self.DownloadArgs = namedtuple("DownloadArgs", ("ctx", "voice", "query"))
 
         self.ytdl_opts = {
             "format": "bestaudio/best",
@@ -46,6 +51,35 @@ class VoiceCog(commands.Cog):
         }
 
         self.disconnect_task.start()
+        self.download_task.start()
+
+    @tasks.loop(seconds=1)
+    async def download_task(self):
+        """Get the next query from the download queue and download it."""
+
+        if self.__next_download.empty():
+            return
+
+        song = self.__next_download.get()
+        loop = self.bot.loop
+
+        self.__lock = True
+        await loop.run_in_executor(
+            None,
+            self.queue_song,
+            song.ctx,
+            song.voice,
+            song.query,
+        )
+        self.__lock = False
+
+        log("Downloaded song.", song.query)
+
+    @download_task.before_loop
+    async def before_download_task(self):
+        """Wait for the bot to be ready."""
+
+        await self.bot.wait_until_ready()
 
     @tasks.loop(minutes=2)
     async def disconnect_task(self):
@@ -81,6 +115,8 @@ class VoiceCog(commands.Cog):
     def queue_song(self, ctx: commands.Context, voice: VoiceClient, query: str):
         """Download a song and queue it."""
 
+        settings = self.guild_voice[ctx.guild]
+
         # https://github.com/yt-dlp/yt-dlp/issues/3298#issuecomment-1181754989
         # Should be a valid way to download the song into BytesIO
         # and then convert into a discord.FFmpegPCMAudio object
@@ -107,7 +143,7 @@ class VoiceCog(commands.Cog):
 
         buffer.seek(0)
         song.data = buffer
-        self.song_queue.append(song)
+        settings.queue.put(song)
 
         if voice.is_playing():
             log("Song added to queue.", level=logging.INFO)
@@ -116,7 +152,7 @@ class VoiceCog(commands.Cog):
 
         audio = discord.FFmpegPCMAudio(buffer, pipe=True, stderr=subprocess.PIPE)
         source = discord.PCMVolumeTransformer(audio)
-        source.volume = self.__volume / 100
+        source.volume = settings.volume / 100
         voice.play(source, after=self.play_next_song(ctx))
 
         self._result = "Playing song."
@@ -125,41 +161,47 @@ class VoiceCog(commands.Cog):
     async def loop(self, ctx: commands.Context):
         """Loop current playing son indefinitely."""
 
-        self.__loop = not self.__loop
+        settings = self.guild_voice[ctx.guild]
+        settings.loop = not settings.loop
 
-        action = "L" if self.__loop else "Stopped l"
+        action = "L" if settings.loop else "Stopped l"
         await ctx.send(f"{action}ooping song.")
 
     @commands.command(name="queue", description="Show the song queue.")
     async def queue(self, ctx: commands.Context):
         """Show the current queue."""
 
+        settings = self.guild_voice[ctx.guild]
+
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
             return await ctx.send("I am not in a voice channel.")
 
-        if len(self.song_queue) == 0:
+        if settings.queue.empty():
             return await ctx.send("No song currently queued.")
 
         # Create the embed
+        songs = settings.queue.queue
         embed = discord.Embed(
             title="Queue",
             description="\n".join(
                 [
                     f"{i + 1}. **{song.name}**\n{song.link}"
-                    for i, song in enumerate(self.song_queue)
+                    for i, song in enumerate(songs)
                 ]
             ),
             color=discord.Color.blurple(),
         )
-        embed.set_thumbnail(url=self.song_queue[0].thumbnail)
+        embed.set_thumbnail(url=settings.queue.queue[0].thumbnail)
 
         return await ctx.send(embed=embed)
 
     @commands.command(name="playing", description="Show the currently playing song.")
     async def now_playing(self, ctx: commands.Context):
         """Show the currently playing song."""
+
+        settings = self.guild_voice[ctx.guild]
 
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
@@ -170,11 +212,11 @@ class VoiceCog(commands.Cog):
         if not voice.is_playing():
             return await ctx.send("I am not playing a song.")
 
-        if len(self.song_queue) == 0:
+        if settings.queue.empty():
             return await ctx.send("No song currently queued.")
 
         # Get the song that is currently playing
-        song: Song = self.song_queue[0]
+        song: Song = settings.queue.queue[0]
 
         # Create the embed
         embed = discord.Embed(
@@ -219,7 +261,7 @@ class VoiceCog(commands.Cog):
         # return
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await ctx.send("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.")
 
         # Disconnect from the voice channel
         await voice.disconnect()
@@ -229,15 +271,17 @@ class VoiceCog(commands.Cog):
     async def volume(self, ctx: commands.Context, volume: int):
         """Change the volume of the player."""
 
+        settings = self.guild_voice[ctx.guild]
+
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await ctx.send("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.")
 
         # Change the volume of the player
-        self.__volume = volume
-        voice.source.volume = self.__volume / 100
-        return await ctx.send(f"Changed the volume to {volume}.", ephemeral=True)
+        settings.volume = volume
+        voice.source.volume = settings.volume / 100
+        return await ctx.send(f"Changed the volume to {volume}%")
 
     @commands.command(name="skip", description="Skip the current song.")
     async def skip(self, ctx: commands.Context):
@@ -269,6 +313,8 @@ class VoiceCog(commands.Cog):
     def play_next_song(self, ctx: commands.Context):
         """Play the next song in the queue."""
 
+        settings = self.guild_voice[ctx.guild]
+
         def inner(error):
             if error:
                 return
@@ -279,25 +325,26 @@ class VoiceCog(commands.Cog):
 
             # If loop is set to True,
             # then we need to just replay the current song.
-            if self.__loop:
-                song = self.song_queue[0]
+            if settings.loop:
+                song = settings.queue.queue[0]
                 song.data.seek(0)
             else:
                 # Remove current playing song
                 # and play the next one in the queue
-                if len(self.song_queue) == 0:
+                if settings.queue.empty():
                     return
 
-                self.song_queue.pop(0)
+                settings.queue.get()
 
-                if len(self.song_queue) == 0:
+                if settings.queue.empty():
                     return
 
-                song = self.song_queue[0]
+                song = settings.queue.queue[0]
 
+            # Start playing next song
             audio = discord.FFmpegPCMAudio(song.data, pipe=True, stderr=subprocess.PIPE)
             source = discord.PCMVolumeTransformer(audio)
-            source.volume = self.__volume / 100
+            source.volume = settings.volume / 100
             voice.play(source, after=self.play_next_song(ctx))
 
         return inner
@@ -306,7 +353,9 @@ class VoiceCog(commands.Cog):
     async def play(self, ctx: commands.Context, *, query: str):
         """Play a song using the spotify API library."""
 
-        if len(self.song_queue) >= 10:
+        settings = self.guild_voice[ctx.guild]
+
+        if settings.queue.full():
             return await ctx.send("The queue is full.")
 
         # If the user is not in a voice channel exit
@@ -325,16 +374,24 @@ class VoiceCog(commands.Cog):
 
         # Only allow youtube links since the bot only uses yt-dlp
         if not query.startswith("https://www.youtube.com/watch?v="):
-            # Check the length of the video and the filesize
-
             await ctx.send("You need to provide a valid Youtube link.")
             return
+
+        if self.__lock:
+            await ctx.send("Your download will start shortly.")
+            args = self.DownloadArgs(ctx, voice, query)
+            self.__next_download.put(args)
+            return
+
+        self.__lock = True
 
         await ctx.send("Downloading...")
         async with ctx.typing():
             loop = self.bot.loop
             await loop.run_in_executor(None, self.queue_song, ctx, voice, query)
             await ctx.send(self._result)
+
+        self.__lock = False
 
     @commands.command(name="pause", description="Pause the player.")
     async def pause(self, ctx: commands.Context):
@@ -343,7 +400,7 @@ class VoiceCog(commands.Cog):
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await ctx.send("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.")
 
         # Pause the player
         voice.pause()
@@ -356,7 +413,7 @@ class VoiceCog(commands.Cog):
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await ctx.send("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.")
 
         # Resume the player
         voice.resume()
@@ -366,15 +423,17 @@ class VoiceCog(commands.Cog):
     async def stop(self, ctx: commands.Context):
         """Stop the player."""
 
+        settings = self.guild_voice[ctx.guild]
+
         # If the bot is not in a voice channel exit
         voice: VoiceClient = ctx.guild.voice_client
         if not voice:
-            return await ctx.send("I am not in a voice channel.", ephemeral=True)
+            return await ctx.send("I am not in a voice channel.")
 
         # Stop the player, clear the queue
         # and reset the loop flag
         voice.stop()
-        self.song_queue.clear()
-        self.__loop = False
+        settings.queue.queue.clear()
+        settings.loop = False
 
         await ctx.send("Stopped the player and cleared queue.")

@@ -30,6 +30,7 @@ class VoiceSettings:
     queue: Queue = Queue(maxsize=10)
     loop: bool = False
     volume: int = 100
+    last_song: Optional[Song] = None
 
     def copy(self):
         """Return a new instance of the current settings."""

@@ -31,6 +31,7 @@ class VoiceCog(commands.Cog):
         - queue ✔️
         - volume ✔️
         - playing ✔️
+        - replay ✔️
     """
 
     def __init__(self, bot: BNSSBot):
@@ -144,6 +145,7 @@ class VoiceCog(commands.Cog):
         buffer.seek(0)
         song.data = buffer
         settings.queue.put(song)
+        settings.last_song = song
 
         if voice.is_playing():
             log("Song added to queue.", level=logging.INFO)
@@ -156,6 +158,42 @@ class VoiceCog(commands.Cog):
         voice.play(source, after=self.play_next_song(ctx))
 
         self._result = "Playing song."
+
+    @commands.command(name="replay", description="Replay the last song.")
+    async def replay(self, ctx: commands.Context):
+        """Replay the last song."""
+
+        settings = self.guild_voice[ctx.guild]
+
+        # If the bot is not in a voice channel exit
+        voice: VoiceClient = ctx.guild.voice_client
+        if not voice:
+            return await ctx.send("I am not in a voice channel.")
+
+        # If the user is not in a voice channel exit
+        if not ctx.author.voice:
+            return await ctx.send("You are not in a voice channel.")
+
+        # If the user is not in the same voice channel as the bot exit
+        if ctx.author.voice.channel != voice.channel:
+            return await ctx.send("You are not in the same voice channel as me.")
+
+        # If there is no last song exit
+        if not settings.last_song:
+            return await ctx.send("There is no last song.")
+
+        # Can't play song if there is another one already playing
+        if voice.is_playing():
+            return await ctx.send("There is already a song playing.")
+
+        buffer = settings.last_song.data
+        buffer.seek(0)
+
+        # Play the last song
+        audio = discord.FFmpegPCMAudio(buffer, pipe=True, stderr=subprocess.PIPE)
+        source = discord.PCMVolumeTransformer(audio)
+        source.volume = settings.volume / 100
+        voice.play(source, after=self.play_next_song(ctx))
 
     @commands.command(name="loop", description="Loop current song.")
     async def loop(self, ctx: commands.Context):

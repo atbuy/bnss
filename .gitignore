@@ -4,6 +4,8 @@
 # Python
 *.py[cod]
 **/__pycache__
+.python-version
+pyrightconfig.json
 
 # Environment configuration
 .env*

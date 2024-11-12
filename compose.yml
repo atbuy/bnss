@@ -1,0 +1,8 @@
+services:
+  bot:
+    build:
+      context: .
+    env_file:
+      - .env
+    container_name: bnss
+    restart: always

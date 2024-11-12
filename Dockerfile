@@ -1,11 +1,11 @@
-FROM python:3.10-alpine3.18 as python
+FROM python:3.12-alpine AS python
 
 # Python cofiguration
 ENV PYTHONBUFFERED=true
 
 
 # Install dependencies in the build stage
-FROM python as build
+FROM python AS build
 
 # Copy source
 COPY . /app
@@ -18,16 +18,16 @@ ENV PATH="$POETRY_HOME/bin:${PATH}"
 
 # Install needed binaries and headers
 RUN apk add --no-cache gcc musl-dev libffi-dev curl && \
-    # Upgrade pip and setuptools
-    pip install --upgrade pip setuptools wheel && \
-    # Install poetry
-    curl -sSL https://install.python-poetry.org | python3 - || cat /app/poetry*.log && \
-    # Install dependencies from poetry lock file
-    poetry install --no-dev --no-interaction --no-ansi -vvv
+  # Upgrade pip and setuptools
+  pip install --upgrade pip setuptools wheel && \
+  # Install poetry
+  curl -sSL https://install.python-poetry.org | python3 - && \
+  # Install dependencies from poetry lock file
+  poetry install --no-dev --no-interaction --no-ansi
 
 
 # Run app in runtime stage
-FROM python as runtime
+FROM python AS runtime
 
 RUN apk add --no-cache ffmpeg opus
 

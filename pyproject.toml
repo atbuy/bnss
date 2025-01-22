@@ -10,7 +10,7 @@ readme = "README.md"
 python = "^3.12"
 discord-py = {version = "2.4.0", extras = ["voice"]}
 pydantic-settings = "2.6.1"
-yt-dlp = "2024.11.4"
+yt-dlp = "2025.1.15"
 
 
 [tool.poetry.group.dev.dependencies]

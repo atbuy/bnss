@@ -21,7 +21,7 @@ RUN apk add --no-cache gcc musl-dev libffi-dev curl && \
   # Upgrade pip and setuptools
   pip install --upgrade pip setuptools wheel && \
   # Install poetry
-  pip install poetry==2.0.1 && \
+  pip install poetry==2.1.1 && \
   # Install dependencies from poetry lock file
   poetry install --only main --no-interaction --no-ansi
 

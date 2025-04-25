@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "bnss"
-version = "0.2.1"
+version = "0.2.2"
 description = "Music bot for Discord written in Python"
 authors = ["atbuy <atbuy@atbuy.dev>"]
 license = "MIT"
@@ -8,14 +8,14 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-discord-py = {version = "2.5.1", extras = ["voice"]}
-pydantic-settings = "2.8.1"
-yt-dlp = "2025.2.19"
+discord-py = {version = "2.5.2", extras = ["voice"]}
+pydantic-settings = "2.9.1"
+yt-dlp = "2025.3.31"
 
 
 [tool.poetry.group.dev.dependencies]
-ruff = "0.7.3"
-pre-commit = "4.0.1"
+ruff = "0.11.7"
+pre-commit = "4.2.0"
 
 [build-system]
 requires = ["poetry-core"]

@@ -2,7 +2,7 @@ FROM python:3.13-alpine AS python
 
 # Python cofiguration
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONIOENCODING=1
+ENV PYTHONIOENCODING=UTF-8
 
 
 # Install dependencies in the build stage

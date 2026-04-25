@@ -4,6 +4,7 @@
 # Python
 *.py[cod]
 **/__pycache__
+*.egg-info
 .python-version
 pyrightconfig.json
 

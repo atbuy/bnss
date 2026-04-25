@@ -1,22 +1,23 @@
-[tool.poetry]
+[project]
 name = "bnss"
-version = "1.0.3"
+version = "1.0.4"
 description = "Music bot for Discord written in Python"
-authors = ["atbuy <atbuy@atbuy.dev>"]
+authors = [{ name = "atbuy", email = "atbuy@atbuy.dev" }]
 license = "MIT"
+requires-python = ">=3.12"
 readme = "README.md"
+dependencies = [
+  "discord-py[voice]==2.7.1",
+  "pydantic-settings==2.13.1",
+  "yt-dlp==2026.3.17",
+]
 
-[tool.poetry.dependencies]
-python = "^3.12"
-discord-py = {version = "2.7.1", extras = ["voice"]}
-pydantic-settings = "2.13.1"
-yt-dlp = "2026.3.17"
+[project.optional-dependencies]
+dev = ["pre-commit==4.5.1", "ruff==0.15.9"]
 
-
-[tool.poetry.group.dev.dependencies]
-ruff = "0.15.9"
-pre-commit = "4.5.1"
+[tool.setuptools]
+packages = ["bnss"]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

@@ -1,6 +1,6 @@
 [project]
 name = "bnss"
-version = "1.0.4"
+version = "1.0.5"
 description = "Music bot for Discord written in Python"
 authors = [{ name = "atbuy", email = "atbuy@atbuy.dev" }]
 license = "MIT"

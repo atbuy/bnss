@@ -1,6 +1,6 @@
 [project]
 name = "bnss"
-version = "1.0.5"
+version = "1.0.6"
 description = "Music bot for Discord written in Python"
 authors = [{ name = "atbuy", email = "atbuy@atbuy.dev" }]
 license = "MIT"
@@ -9,11 +9,11 @@ readme = "README.md"
 dependencies = [
   "discord-py[voice]==2.7.1",
   "pydantic-settings==2.13.1",
-  "yt-dlp==2026.3.17",
+  "yt-dlp==2026.6.9",
 ]
 
 [project.optional-dependencies]
-dev = ["pre-commit==4.5.1", "ruff==0.15.9"]
+dev = ["pre-commit==4.6.0", "ruff==0.15.16"]
 
 [tool.setuptools]
 packages = ["bnss"]

@@ -1,6 +1,6 @@
 [project]
 name = "bnss"
-version = "1.0.6"
+version = "1.0.7"
 description = "Music bot for Discord written in Python"
 authors = [{ name = "atbuy", email = "atbuy@atbuy.dev" }]
 license = "MIT"
@@ -8,8 +8,8 @@ requires-python = ">=3.12"
 readme = "README.md"
 dependencies = [
   "discord-py[voice]==2.7.1",
-  "pydantic-settings==2.13.1",
-  "yt-dlp==2026.6.9",
+  "pydantic-settings==2.14.2",
+  "yt-dlp==2026.7.4",
 ]
 
 [project.optional-dependencies]

@@ -28,6 +28,8 @@ RUN apk add --no-cache gcc musl-dev libffi-dev curl && \
 
 FROM python AS runtime
 
+RUN pip uninstall --no-cache-dir --yes pip setuptools
+
 COPY --from=build /app /app
 WORKDIR /app
 
